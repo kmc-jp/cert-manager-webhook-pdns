@@ -1,0 +1,49 @@
+name: 'Publish helm chart'
+on:
+  push:
+    branches:
+      - 'main'
+    paths:
+      - 'deploy/**'
+      - '.github/workflows/chart.yaml'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      -
+        name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Replace version
+        run: |
+          sed -i "/^version:/ s/$/+$(date +%Y%m%d%H%M%S)/" deploy/*/Chart.yaml
+
+      -
+        name: Package charts
+        run: |
+          for chart in deploy/*; do
+            if [ -e "$chart/Chart.yaml" ]; then
+              helm package "$chart"
+            fi
+          done
+
+      -
+        name: Login to GHCR
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push charts
+        run: |
+          for pkg in *.tgz; do
+            helm push "$pkg" oci://ghcr.io/kmc-jp/helm-charts
+          done
